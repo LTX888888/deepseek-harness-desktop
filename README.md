@@ -1,107 +1,98 @@
-# DeepSeek Harness Desktop
+<div align="center">
 
-A native desktop application wrapping the DeepSeek Harness Web GUI.
+# 🖥️ DeepSeek Harness Desktop
 
-## Quick Start
+**把 DeepSeek Harness AI 助手装进原生 Windows 桌面应用**
+*Turn the DeepSeek Harness AI agent into a native Windows desktop app*
 
-```bash
-# From this directory
-npm start          # Launch the desktop app
-npm run smoke      # Headless smoke test (captures screenshot to smoke-screenshot.png)
-npm run dist       # Build Windows installer + portable exe (output in release/)
-```
+[![Version](https://img.shields.io/badge/version-0.1.2-4D6BFE)](package.json)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-blue)](https://github.com/LTX888888/deepseek-harness-desktop/releases)
+[![Electron](https://img.shields.io/badge/Electron-38-47848F)](https://www.electronjs.org/)
+[![Node](https://img.shields.io/badge/Node-22.19-339933)](https://nodejs.org/)
 
-## How It Works
+</div>
 
-1. **Locates the harness** — prefers the bundled runtime shipped inside the packaged app (`resources/harness-runtime`, the npm-published `@deepseek-ai/dsh`); falls back to a checkout at `C:\Users\lrl07\deepseek-harness` (or `DSH_ROOT`) in dev mode.
-2. **Starts the server** — runs `dsh web` (via Electron's bundled Node runtime, `ELECTRON_RUN_AS_NODE=1`) on port 3080, or reuses an existing harness already on port 3080.
-3. **Opens a native window** — Electron BrowserWindow loads `http://127.0.0.1:3080`.
-4. **Lifecycle** — Closing the window stops the spawned server (if we started it).
+---
 
-## Language switching (菜单语言切换)
+## ✨ 为什么用桌面版？ / Why a desktop app?
 
-The native menu has a **语言 / Language** menu with 中文 / English. Selecting one writes
-`locale.preference` into `$DSH_HOME/settings.yaml`; the harness settings-file provider
-hot-publishes the edit (chokidar watch), so the GUI language flips **live, without a reload**.
-Menu labels (文件/File, 编辑/Edit, …) follow the active locale.
+| 🪟 原生窗口 | 告别浏览器标签页，独立窗口 + 专属图标 + 任务栏常驻 |
+|---|---|
+| 🚀 开箱即用 | **完全自包含**——内置 AI 引擎和 Node 运行时，装完即用，零依赖 |
+| 🌐 中英一键切换 | 菜单栏「语言」实时切换 中文/English，无需重启 |
+| ⚡ 增量更新 | 以后改功能**只传几十 KB 的代码**，不再重新下载几百 MB 框架 |
+| 🔄 一键覆盖更新 | 新版安装包双击即覆盖，无需卸载旧版 |
+| 🗑️ 独立卸载程序 | 附赠正规卸载器，随时干净卸载 |
+| 🔒 数据安全 | 所有会话、设置、凭据留在本机 `$DSH_HOME`，绝不打包上传 |
 
-## Incremental updates (增量更新)
+## 📸 截图 / Screenshot
 
-The framework (Electron binary + bundled harness runtime) is fixed after install;
-app code ships unpacked (`resources/app.asar.unpacked/src/`). After editing `src/`,
-push just the code change to the installed app — no framework re-download:
+![DeepSeek Harness Desktop](assets/screenshot.png)
 
-```bash
-npm run patch        # copy src/*.cjs over the installed app, then restart it
-```
+## 🚀 快速开始 / Quick Start
 
-Requires a one-time install of a build with `asarUnpack` enabled (0.1.2+).
-For fresh installs or framework upgrades, use `npm run dist` as usual.
+**方式一：安装版（推荐）** —— 双击 `DeepSeek-Harness-Setup-*.exe`，一键覆盖安装，自动建桌面/开始菜单快捷方式。
 
-## Configuration
+**方式二：便携版** —— 下载 `DeepSeek-Harness-Portable-*.exe`，双击即用，无需安装。
 
-| Environment Variable | Purpose |
-|---------------------|---------|
-| `DSH_ROOT` | Override harness checkout location (must contain `apps/cli/src/bin.ts`) |
-| `DSH_DESKTOP_SMOKE=1` | Enable smoke test mode (capture screenshot & exit) |
-| `DSH_DESKTOP_SMOKE_OUTPUT` | Custom screenshot output path |
+> 首次启动自动内置引擎，之后每次打开就是你的 AI 工作台。
 
-## Requirements
+## 🧠 技术亮点 / Tech Highlights
 
-- **Packaged exe**: Windows 10/11, nothing else (self-contained).
-- **Dev mode** (`npm start`): Node.js 18+, and either the bundled runtime or a harness checkout.
+- **自包含引擎**：内置 npm 发布的 `@deepseek-ai/dsh` 全量运行时（约 250MB 依赖），用 Electron 自带 Node 22.19 直接运行，无需系统 Node、无需检出仓库
+- **端口智能复用**：检测到已有 harness 实例（3080）自动复用，避免多实例冲突
+- **实时语言切换**：菜单写 `settings.yaml` → harness 热发布（chokidar watch）→ 前端即时切换
+- **增量补丁机制**：`asarUnpack` 把代码解包成普通文件，`npm run patch` 秒级覆盖更新
+- **覆盖式安装器**：NSIS oneClick，同 appId 自动覆盖、保留用户数据
 
-## Building Installers
+## 🔧 开发者 / For Developers
 
 ```bash
-npm run prepare-runtime   # (re)install the bundled harness runtime from npm
-npm run dist              # bump patch version + build installer/portable/uninstaller
-npm run dist:minor        # bump minor version + build
-npm run dist:major        # bump major version + build
+npm install              # 安装构建依赖
+npm run prepare-runtime  # 拉取内置 harness 运行时（npm @deepseek-ai/dsh）
+npm start                # 开发模式启动
+
+npm run patch            # 增量更新已安装应用（只传改动的代码）
+npm run dist             # 完整打包（自动 bump 版本 + 安装/便携/卸载三件套）
+npm run dist:minor       # minor 版本打包
+npm run dist:major       # major 版本打包
 ```
 
-`dist` auto-increments the patch version (0.1.0 → 0.1.1 → …) so every build
-iteration produces distinctly-named artifacts and keeps previous versions in
-`release/`. Produces (version-tagged):
+产物（`release/`）：
+- `DeepSeek-Harness-Setup-<version>.exe` — 一键覆盖安装器
+- `DeepSeek-Harness-Portable-<version>.exe` — 免安装便携版
+- `DeepSeek-Harness-Uninstall-<version>.exe` — 独立卸载程序
 
-- `DeepSeek-Harness-Setup-<version>.exe` — NSIS installer (one-click overwrite)
-- `DeepSeek-Harness-Portable-<version>.exe` — Portable standalone exe
-- `DeepSeek-Harness-Uninstall-<version>.exe` — Standalone uninstaller
-
-The packaged app is **self-contained**: it bundles the harness engine (the
-published `@deepseek-ai/dsh` npm package) and runs it with Electron's own Node
-runtime, so it does not require the harness checkout or a system Node install.
-
-## Architecture
+## 🏗️ 架构 / Architecture
 
 ```
 src/
-├── main.cjs             # Electron main process (window, lifecycle)
-├── harness.cjs          # Harness server management (spawn, port, readiness)
-├── preload.cjs          # Secure renderer bridge
-├── settings.cjs         # settings.yaml read/write (locale preference)
+├── main.cjs             # Electron 主进程（窗口、菜单、生命周期、日志）
+├── harness.cjs          # harness 服务管理（定位、选端口、就绪等待、清理）
+├── settings.cjs         # settings.yaml 读写（语言偏好等）
+├── preload.cjs          # 安全渲染桥（contextIsolation）
 scripts/
-├── gen-icon.cjs         # Renders the app icon from the harness favicon
-├── prepare-runtime.cjs  # Installs the bundled harness runtime from npm
-├── bump-version.cjs     # Increments package.json version (patch/minor/major)
-├── post-dist.cjs        # Refreshes the standalone uninstaller in release/
-assets/
-├── icon.png             # App icon (DeepSeek mark in brand blue)
-harness-runtime/         # Bundled harness (npm @deepseek-ai/dsh), packed into the app
-build/                   # electron-builder resources
-release/                 # Build output
+├── bump-version.cjs     # 版本自动递增（patch/minor/major）
+├── post-dist.cjs        # 打包后自动清理 + 刷新卸载程序
+├── patch.cjs            # 增量更新：覆盖代码到已安装应用
+├── prepare-runtime.cjs  # 拉取内置 harness 运行时
+└── gen-icon.cjs         # 从 favicon 渲染应用图标
 ```
 
-## Troubleshooting
+## 🔒 数据安全 / Privacy
 
-**"Cannot locate DeepSeek Harness checkout"**
-- Set `DSH_ROOT` to your harness root directory
-- Or ensure the checkout exists at `C:\Users\lrl07\deepseek-harness`
+应用**只读取、从不打包**你的数据：
+- 会话、设置、API 凭据都存放在 `$DSH_HOME`（默认 `~/.dsh`）——完全本机、项目之外
+- 打包产物和代码中**不含任何用户数据或密钥**
+- 代码中零硬编码路径，可放心审计
 
-**Port 3080 already in use**
-- The app detects if a harness is already running on 3080 and reuses it
-- If another process holds 3080, it tries 3081, 3082, ...
+## 📄 License
 
-**Window shows blank/error**
-- Check console output for server startup logs
-- Ensure `pnpm run build` has been run in the harness repo (builds `apps/web/dist`)
+[MIT](LICENSE)
+
+---
+
+<div align="center">
+⭐ 如果这个项目对你有帮助，欢迎 Star！ · 用 ❤️ 和 DeepSeek Harness 构建
+</div>
