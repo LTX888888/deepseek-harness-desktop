@@ -1,0 +1,78 @@
+{
+  "name": "deepseek-harness-desktop",
+  "version": "0.1.2",
+  "description": "DeepSeek Harness desktop application - a native window over the dsh web GUI.",
+  "license": "MIT",
+  "author": "DeepSeek Harness",
+  "private": true,
+  "main": "src/main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "smoke": "cross-env DSH_DESKTOP_SMOKE=1 electron .",
+    "patch": "node scripts/patch.cjs",
+    "dist": "node scripts/bump-version.cjs patch && electron-builder --win nsis portable && node scripts/post-dist.cjs",
+    "dist:minor": "node scripts/bump-version.cjs minor && electron-builder --win nsis portable && node scripts/post-dist.cjs",
+    "dist:major": "node scripts/bump-version.cjs major && electron-builder --win nsis portable && node scripts/post-dist.cjs",
+    "dist:dir": "electron-builder --win --dir",
+    "prepare-runtime": "node scripts/prepare-runtime.cjs"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "electron": "^38.2.0",
+    "electron-builder": "^26.0.12",
+    "sharp": "^0.35.3"
+  },
+  "build": {
+    "appId": "com.deepseek.harness.desktop",
+    "productName": "DeepSeek Harness",
+    "copyright": "Copyright (c) 2026 DeepSeek Harness",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "package.json",
+      "src/**/*",
+      "assets/icon.png"
+    ],
+    "asarUnpack": [
+      "src/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "harness-runtime/node_modules",
+        "to": "harness-runtime/node_modules",
+        "filter": [
+          "**/*",
+          "!**/*.map",
+          "!**/README*",
+          "!**/LICENSE*",
+          "!**/*.d.ts",
+          "!**/node-pty/prebuilds/darwin*/**",
+          "!**/node-pty/prebuilds/linux*/**"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "assets/icon.png",
+      "artifactName": "DeepSeek-Harness-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "DeepSeek Harness"
+    },
+    "portable": {
+      "artifactName": "DeepSeek-Harness-Portable-${version}.exe"
+    }
+  },
+  "dependencies": {
+    "yaml": "^2.9.0"
+  }
+}

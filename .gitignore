@@ -1,0 +1,24 @@
+# ---- Dependencies (regenerate with: npm install) ----
+node_modules/
+
+# ---- Bundled harness runtime (regenerate with: npm run prepare-runtime) ----
+# Contains 246 MB of npm-published packages; never commit it.
+harness-runtime/
+
+# ---- Build output (regenerate with: npm run dist) ----
+release/
+
+# ---- Logs & temporary artifacts ----
+*.log
+smoke-*.png
+*.tmp
+*.bak
+
+# ---- OS junk ----
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- Editors ----
+.vscode/
+.idea/
