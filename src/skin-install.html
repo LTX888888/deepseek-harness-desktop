@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'">
+<title>从 GitHub 安装皮肤 / Install Skin from GitHub</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: #1e1f24;
+    color: #e6e6e6;
+    padding: 18px 20px;
+    user-select: none;
+  }
+  h1 { font-size: 15px; margin: 0 0 14px; color: #fff; font-weight: 600; }
+  .row { display: flex; gap: 8px; }
+  input[type="text"] {
+    flex: 1;
+    padding: 8px 10px;
+    border: 1px solid #3a3d46;
+    border-radius: 6px;
+    background: #15161a;
+    color: #e6e6e6;
+    font-size: 13px;
+    outline: none;
+  }
+  input[type="text"]:focus { border-color: #4d6bfe; }
+  input[type="text"]::placeholder { color: #6b7280; }
+  button {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    background: #4d6bfe;
+    color: #fff;
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  button:hover { background: #3d5af0; }
+  button:disabled { background: #37405c; color: #9aa3b8; cursor: default; }
+  #status {
+    margin-top: 14px;
+    min-height: 38px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: #b3b9c4;
+    word-break: break-all;
+    white-space: pre-wrap;
+  }
+  #status.ok { color: #4ade80; }
+  #status.err { color: #f87171; }
+  #actions { margin-top: 6px; }
+  #actions button { background: #2b2f3a; }
+  #actions button:hover { background: #3a3f4d; }
+  #confirm {
+    margin-top: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  #confirm[hidden] { display: none; }
+  .confirm-label { font-size: 13px; color: #b3b9c4; }
+  #switch-now.primary { background: #16a34a; }
+  #switch-now.primary:hover { background: #15803d; }
+  #keep-current { background: #2b2f3a; }
+  #keep-current:hover { background: #3a3f4d; }
+  .hint {
+    margin-top: 16px;
+    font-size: 12px;
+    color: #8a91a0;
+    line-height: 1.6;
+    border-top: 1px solid #2c2f38;
+    padding-top: 10px;
+  }
+</style>
+</head>
+<body>
+  <h1>从 GitHub 安装皮肤 / Install Skin from GitHub</h1>
+  <div class="row">
+    <input id="url" type="text" spellcheck="false" autocomplete="off"
+           placeholder="https://github.com/用户名/仓库名" autofocus>
+    <button id="install">安装 / Install</button>
+  </div>
+  <div id="status"></div>
+  <div id="confirm" hidden>
+    <span class="confirm-label">是否立即切换到新皮肤？</span>
+    <button id="switch-now" class="primary">立即切换 / Switch Now</button>
+    <button id="keep-current">暂不切换 / Not Now</button>
+  </div>
+  <div id="actions" hidden>
+    <button id="open-folder">打开皮肤文件夹 / Open Skins Folder</button>
+  </div>
+  <p class="hint">
+    支持仓库主页（自动取 main/master 分支）、分支地址（…/tree/分支）、发布 zip 直链（…/releases/download/…）。
+    安装完成后在菜单「皮肤 / Skins」里即可切换。安装的皮肤存放在 ~/.dsh/skins。
+  </p>
+
+<script>
+  const input = document.getElementById('url');
+  const btn = document.getElementById('install');
+  const statusEl = document.getElementById('status');
+  const confirmEl = document.getElementById('confirm');
+  const actionsEl = document.getElementById('actions');
+  let lastInstalledName = null;
+
+  window.dshSkinInstaller.onStatus((text) => {
+    statusEl.textContent = text;
+  });
+
+  async function go() {
+    const url = input.value.trim();
+    if (!url || btn.disabled) return;
+    btn.disabled = true;
+    actionsEl.hidden = true;
+    confirmEl.hidden = true;
+    statusEl.textContent = '请稍候…';
+    statusEl.className = '';
+    const res = await window.dshSkinInstaller.install(url);
+    if (res.ok) {
+      lastInstalledName = res.name;
+      statusEl.textContent = `✅ 已安装「${res.name}」`;
+      statusEl.className = 'ok';
+      confirmEl.hidden = false;
+      actionsEl.hidden = false;
+    } else {
+      statusEl.textContent = `❌ ${res.message || '安装失败'}`;
+      statusEl.className = 'err';
+      btn.disabled = false;
+    }
+  }
+
+  btn.addEventListener('click', go);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+  document.getElementById('open-folder').addEventListener('click', () => window.dshSkinInstaller.openSkinsFolder());
+  document.getElementById('switch-now').addEventListener('click', () => {
+    if (!lastInstalledName) return;
+    window.dshSkinInstaller.switchTo(lastInstalledName);
+    statusEl.textContent = `已切换到「${lastInstalledName}」，可关闭此窗口`;
+    statusEl.className = 'ok';
+    confirmEl.hidden = true;
+  });
+  document.getElementById('keep-current').addEventListener('click', () => {
+    confirmEl.hidden = true;
+  });
+</script>
+</body>
+</html>

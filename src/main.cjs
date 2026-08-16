@@ -3,12 +3,20 @@
  * Spawns/manages the dsh web server and opens the GUI in a native window.
  */
 
-const { app, BrowserWindow, shell, ipcMain, Menu } = require('electron');
+const { app, BrowserWindow, shell, ipcMain, Menu, MenuItem } = require('electron');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
 const { spawnHarnessServer, waitForReady, killHarness } = require('./harness.cjs');
-const { readLocalePreference, writeLocalePreference } = require('./settings.cjs');
+const {
+  readLocalePreference,
+  writeLocalePreference,
+  readSkinPreference,
+  writeSkinPreference,
+} = require('./settings.cjs');
+const { DEFAULT_SKIN, listSkins, ensureSkinsDirectory, getSkinsDirectory, readSkinCss } = require('./skins.cjs');
+const { installSkinFromGitHub } = require('./skin-install.cjs');
+const { buildOverlayScript } = require('./fullscreen.cjs');
 
 // Mirror console output into a log file: the packaged exe has no console
 // window, so this is the only way to diagnose startup problems on a user box.
@@ -36,9 +44,144 @@ let harnessPort = 3080;
 let harnessReused = false;
 let isQuitting = false;
 
+// --- Skin (theme) state -----------------------------------------------------
+// Key returned by webContents.insertCSS for the currently-applied skin, so we
+// can remove it before applying another (instant switch, no reload needed).
+let activeSkinKey = null;
+let skinApplySeq = 0; // guards against overlapping apply races
+let lastSkinsSignature = ''; // used to rescan the skins menu lazily on open
+
+/** Current skin id ('__default__' when none chosen). */
+function currentSkinId() {
+  return readSkinPreference() || DEFAULT_SKIN;
+}
+
+/** Stable fingerprint of the installed skin list (name + id). */
+function skinsSignature() {
+  try {
+    return listSkins().map((s) => `${s.id}\u0000${s.name}`).join('\u0001');
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Apply a skin's CSS to the current page by swapping the inserted stylesheet.
+ * Uses insertCSS/removeInsertedCSS (main-process, CSP-immune) so switching is
+ * instant and does not reload the renderer.
+ */
+async function applySkin(id) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const seq = ++skinApplySeq;
+  const css = readSkinCss(id);
+  try {
+    if (activeSkinKey) {
+      const key = activeSkinKey;
+      activeSkinKey = null;
+      await mainWindow.webContents.removeInsertedCSS(key);
+    }
+    if (seq !== skinApplySeq) return; // superseded by a newer apply
+    if (css) {
+      activeSkinKey = await mainWindow.webContents.insertCSS(css);
+    }
+  } catch (error) {
+    console.error('[desktop] Failed to apply skin:', error);
+  }
+}
+
+/** Persist + apply a skin choice, then refresh the menu checkmarks. */
+function setSkin(id) {
+  try {
+    writeSkinPreference(id);
+  } catch (error) {
+    console.error('[desktop] Failed to persist skin preference:', error);
+  }
+  applySkin(id);
+  buildMenu();
+}
+
+/** Open the skins folder in Explorer (creating it + a README on first use). */
+function openSkinsFolder() {
+  try {
+    ensureSkinsDirectory();
+    shell.openPath(getSkinsDirectory()).then((err) => {
+      if (err) console.error('[desktop] Failed to open skins folder:', err);
+    });
+  } catch (error) {
+    console.error('[desktop] Failed to open skins folder:', error);
+  }
+}
+
+// --- GitHub skin installer dialog -------------------------------------------
+let skinInstallWin = null;
+
+/** Push a progress line to the install dialog (no-op when it is closed). */
+function sendSkinStatus(text) {
+  if (skinInstallWin && !skinInstallWin.isDestroyed()) {
+    skinInstallWin.webContents.send('dsh-skin-install:status', String(text));
+  }
+}
+
+/** Open the "Install Skin from GitHub" modal dialog. */
+function openSkinInstallDialog() {
+  if (skinInstallWin && !skinInstallWin.isDestroyed()) {
+    skinInstallWin.focus();
+    return;
+  }
+  const zh = readLocalePreference() === 'zh';
+  skinInstallWin = new BrowserWindow({
+    width: 520,
+    height: 360,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    parent: mainWindow || undefined,
+    modal: Boolean(mainWindow),
+    title: zh ? '从 GitHub 安装皮肤' : 'Install Skin from GitHub',
+    show: false,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      preload: path.join(__dirname, 'skin-install-preload.cjs'),
+    },
+    icon: path.join(__dirname, '..', 'assets', 'icon.png'),
+  });
+  skinInstallWin.loadFile(path.join(__dirname, 'skin-install.html'));
+  skinInstallWin.once('ready-to-show', () => {
+    if (skinInstallWin) skinInstallWin.show();
+  });
+  skinInstallWin.on('closed', () => {
+    skinInstallWin = null;
+  });
+}
+
 /** Smoke test mode: capture a screenshot and exit. */
 const SMOKE_MODE = process.env.DSH_DESKTOP_SMOKE === '1';
 const SMOKE_OUTPUT = process.env.DSH_DESKTOP_SMOKE_OUTPUT || path.join(__dirname, '..', 'smoke-screenshot.png');
+
+/** Escape a string for safe embedding in HTML text content. */
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (ch) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]
+  ));
+}
+
+/**
+ * Build a data: URL that renders a simple error page. The title and detail are
+ * HTML-escaped and the whole document is percent-encoded, so arbitrary error
+ * messages (including non-ASCII text) render correctly and cannot inject markup.
+ */
+function errorPage(title, detail) {
+  const html = [
+    '<!doctype html><meta charset="utf-8">',
+    '<body style="font-family:sans-serif;padding:2rem">',
+    `<h1>${escapeHtml(title)}</h1>`,
+    `<pre style="background:#111;color:#0f0;padding:1rem;overflow:auto">${escapeHtml(detail)}</pre>`,
+    '</body>',
+  ].join('');
+  return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+}
 
 /**
  * Switch the harness GUI language by writing the durable locale preference.
@@ -52,6 +195,73 @@ function setLocale(preference) {
     console.error('[desktop] Failed to switch locale:', error);
   }
   buildMenu(); // refresh checkbox + label state
+}
+
+/**
+ * Build the Skins submenu: a radio list of the default + installed skins,
+ * followed by "open folder" and "refresh". Re-scans lazily on open so skins
+ * dropped in while the app is running appear without a manual refresh.
+ */
+function buildSkinsSubmenu(L) {
+  const current = currentSkinId();
+  const submenu = new Menu();
+
+  submenu.append(new MenuItem({
+    label: L('默认', 'Default'),
+    type: 'radio',
+    checked: current === DEFAULT_SKIN,
+    click: () => setSkin(DEFAULT_SKIN),
+  }));
+
+  for (const skin of listSkins()) {
+    const label = skin.author ? `${skin.name} (${skin.author})` : skin.name;
+    submenu.append(new MenuItem({
+      label,
+      type: 'radio',
+      checked: current === skin.id,
+      click: () => setSkin(skin.id),
+    }));
+  }
+
+  submenu.append(new MenuItem({ type: 'separator' }));
+  submenu.append(new MenuItem({
+    label: L('从 GitHub 安装皮肤…', 'Install Skin from GitHub…'),
+    click: () => openSkinInstallDialog(),
+  }));
+  submenu.append(new MenuItem({
+    label: L('打开皮肤文件夹…', 'Open Skins Folder…'),
+    click: () => openSkinsFolder(),
+  }));
+  submenu.append(new MenuItem({
+    label: L('刷新皮肤列表', 'Refresh Skins'),
+    click: () => buildMenu(),
+  }));
+
+  // Rebuild only when the on-disk list actually changed, so opening the menu
+  // does not disturb it unless there is something new to show.
+  submenu.on('menu-will-show', () => {
+    if (skinsSignature() !== lastSkinsSignature) buildMenu();
+  });
+
+  return submenu;
+}
+
+// --- Fullscreen -------------------------------------------------------------
+/** Toggle the main window's fullscreen state. */
+function toggleFullscreen() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.setFullScreen(!mainWindow.isFullScreen());
+}
+
+/**
+ * Show/hide the in-page "exit fullscreen" overlay button (top-right corner).
+ * Re-runs a single self-contained script that creates the button on first use.
+ */
+function applyFullscreenOverlay(visible) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const zh = readLocalePreference() === 'zh';
+  const label = zh ? '退出全屏' : 'Exit Full Screen';
+  mainWindow.webContents.executeJavaScript(buildOverlayScript(visible, label)).catch(() => {});
 }
 
 /** Build and install the application menu (labels follow the active locale). */
@@ -87,7 +297,13 @@ function buildMenu() {
         { role: 'zoomIn', label: L('放大', 'Zoom In') },
         { role: 'zoomOut', label: L('缩小', 'Zoom Out') },
         { type: 'separator' },
-        { role: 'togglefullscreen', label: L('全屏', 'Toggle Full Screen') },
+        {
+          label: (mainWindow && mainWindow.isFullScreen())
+            ? L('退出全屏', 'Exit Full Screen')
+            : L('全屏', 'Enter Full Screen'),
+          accelerator: 'F11',
+          click: () => toggleFullscreen(),
+        },
       ],
     },
     {
@@ -96,6 +312,10 @@ function buildMenu() {
         { label: '中文', type: 'checkbox', checked: current === 'zh', click: () => setLocale('zh') },
         { label: 'English', type: 'checkbox', checked: current === 'en', click: () => setLocale('en') },
       ],
+    },
+    {
+      label: L('皮肤', 'Skins'),
+      submenu: buildSkinsSubmenu(L),
     },
     {
       label: L('帮助', 'Help'),
@@ -110,6 +330,7 @@ function buildMenu() {
     },
   ];
 
+  lastSkinsSignature = skinsSignature();
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
@@ -137,6 +358,25 @@ function createWindow(serverUrl) {
       return { action: 'deny' };
     }
     return { action: 'allow' };
+  });
+
+  // Re-apply the selected skin whenever the page (re)loads. insertCSS keys do
+  // not survive a reload, so drop the stale key and inject the current skin.
+  mainWindow.webContents.on('did-finish-load', () => {
+    activeSkinKey = null;
+    applySkin(currentSkinId());
+    applyFullscreenOverlay(Boolean(mainWindow && mainWindow.isFullScreen()));
+  });
+
+  // Fullscreen overlay: show/hide the top-right "exit fullscreen" button and
+  // refresh the menu label whenever the window enters or leaves fullscreen.
+  mainWindow.on('enter-full-screen', () => {
+    applyFullscreenOverlay(true);
+    buildMenu();
+  });
+  mainWindow.on('leave-full-screen', () => {
+    applyFullscreenOverlay(false);
+    buildMenu();
   });
 
   if (SMOKE_MODE) {
@@ -175,7 +415,7 @@ function createWindow(serverUrl) {
     console.error('[desktop] Failed to load URL:', err);
     if (!SMOKE_MODE) {
       // Show error in window
-      mainWindow.loadURL(`data:text/html,<h1>Failed to load DeepSeek Harness</h1><pre>${err.message}</pre>`);
+      mainWindow.loadURL(errorPage('Failed to load DeepSeek Harness', err.message));
     }
   });
 
@@ -187,6 +427,32 @@ async function startup() {
   if (SMOKE_MODE) console.log('[desktop] SMOKE MODE enabled');
 
   buildMenu(); // install the native menu (language switching lives here)
+
+  // Answer the renderer's version query. The sandboxed preload cannot read
+  // package.json itself, so it asks the main process over IPC.
+  ipcMain.on('dsh-desktop:get-version', (event) => {
+    event.returnValue = app.getVersion();
+  });
+
+  // GitHub skin installer: run the download → extract → install pipeline.
+  ipcMain.handle('dsh-desktop:install-skin', async (_event, url) => {
+    try {
+      const result = await installSkinFromGitHub(String(url || ''), sendSkinStatus);
+      buildMenu(); // make the freshly installed skin show up immediately
+      return { ok: true, ...result };
+    } catch (error) {
+      console.error('[desktop] Skin install failed:', error);
+      return { ok: false, message: error && error.message ? error.message : String(error) };
+    }
+  });
+  ipcMain.on('dsh-skin-install:close', () => {
+    if (skinInstallWin) skinInstallWin.close();
+  });
+  ipcMain.on('dsh-skin-install:open-folder', () => openSkinsFolder());
+  ipcMain.on('dsh-skin-install:switch-to', (_event, id) => setSkin(String(id || '')));
+  ipcMain.on('dsh-desktop:set-fullscreen', (_event, flag) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setFullScreen(Boolean(flag));
+  });
 
   // Ensure single instance
   const gotLock = app.requestSingleInstanceLock();
@@ -233,13 +499,10 @@ async function startup() {
       title: 'DeepSeek Harness — Error',
       webPreferences: { nodeIntegration: false, contextIsolation: true },
     });
-    win.loadURL(`data:text/html,
-      <html><body style="font-family:sans-serif;padding:2rem">
-      <h1>Failed to start DeepSeek Harness</h1>
-      <pre style="background:#111;color:#0f0;padding:1rem;overflow:auto">${err.message}</pre>
-      <p>Check console for details. Set DSH_ROOT to your harness checkout root, or use a self-contained build.</p>
-      </body></html>
-    `);
+    win.loadURL(errorPage(
+      'Failed to start DeepSeek Harness',
+      `${err.message}\n\nCheck console for details. Set DSH_ROOT to your harness checkout root, or use a self-contained build.`,
+    ));
   }
 }
 

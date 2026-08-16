@@ -1,6 +1,9 @@
 # ---- Dependencies (regenerate with: npm install) ----
 node_modules/
 
+# ---- electron-builder download cache (npmmirror build artifacts) ----
+.builder-cache/
+
 # ---- Bundled harness runtime (regenerate with: npm run prepare-runtime) ----
 # Contains 246 MB of npm-published packages; never commit it.
 harness-runtime/

@@ -9,6 +9,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
 
 const release = path.join(__dirname, '..', 'release');
 const version = require(path.join(__dirname, '..', 'package.json')).version;
@@ -19,14 +20,36 @@ const KEEP = new Set([
   `DeepSeek-Harness-Uninstall-${version}.exe`,
 ]);
 
+/** Locate the installed app's uninstaller (default path → registry, for custom install dirs). */
 function installedUninstaller() {
-  const p = path.join(
-    process.env.LOCALAPPDATA || '',
-    'Programs',
-    'deepseek-harness-desktop',
-    'Uninstall DeepSeek Harness.exe',
-  );
-  return fs.existsSync(p) ? p : null;
+  const defaults = [
+    path.join(process.env.LOCALAPPDATA || '', 'Programs', 'deepseek-harness-desktop', 'Uninstall DeepSeek Harness.exe'),
+    path.join(process.env.LOCALAPPDATA || '', 'Programs', 'DeepSeek Harness', 'Uninstall DeepSeek Harness.exe'),
+  ];
+  for (const p of defaults) if (fs.existsSync(p)) return p;
+  try {
+    const ps = `
+      $ErrorActionPreference = 'SilentlyContinue'
+      foreach ($hive in @('HKCU:', 'HKLM:')) {
+        Get-ChildItem "$hive\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall" | ForEach-Object {
+          if ($_.GetValue('DisplayName') -like 'DeepSeek Harness*') {
+            $loc = (Get-ItemProperty "HKCU:\\Software\\$($_.PSChildName)").InstallLocation
+            if ($loc -and (Test-Path (Join-Path $loc 'Uninstall DeepSeek Harness.exe'))) { Write-Output (Join-Path $loc 'Uninstall DeepSeek Harness.exe'); exit 0 }
+          }
+        }
+      }
+    `;
+    const out = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], {
+      encoding: 'utf8',
+      windowsHide: true,
+      timeout: 20000,
+    });
+    const p = out.trim().split(/\r?\n/)[0];
+    if (p && fs.existsSync(p)) return p;
+  } catch {
+    /* fall through */
+  }
+  return null;
 }
 
 function existingUninstaller() {

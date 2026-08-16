@@ -1,6 +1,6 @@
 {
   "name": "deepseek-harness-desktop",
-  "version": "0.1.2",
+  "version": "0.1.8",
   "description": "DeepSeek Harness desktop application - a native window over the dsh web GUI.",
   "license": "MIT",
   "author": "DeepSeek Harness",
@@ -10,10 +10,12 @@
     "start": "electron .",
     "smoke": "cross-env DSH_DESKTOP_SMOKE=1 electron .",
     "patch": "node scripts/patch.cjs",
+    "make-patch": "node scripts/make-patch.cjs",
     "dist": "node scripts/bump-version.cjs patch && electron-builder --win nsis portable && node scripts/post-dist.cjs",
     "dist:minor": "node scripts/bump-version.cjs minor && electron-builder --win nsis portable && node scripts/post-dist.cjs",
     "dist:major": "node scripts/bump-version.cjs major && electron-builder --win nsis portable && node scripts/post-dist.cjs",
     "dist:dir": "electron-builder --win --dir",
+    "release": "npm run dist && npm run make-patch",
     "prepare-runtime": "node scripts/prepare-runtime.cjs"
   },
   "devDependencies": {
@@ -62,11 +64,14 @@
       "artifactName": "DeepSeek-Harness-Setup-${version}.${ext}"
     },
     "nsis": {
-      "oneClick": true,
+      "oneClick": false,
       "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "DeepSeek Harness"
+      "shortcutName": "DeepSeek Harness",
+      "menuCategory": "DeepSeek Harness",
+      "include": "installer.nsh"
     },
     "portable": {
       "artifactName": "DeepSeek-Harness-Portable-${version}.exe"

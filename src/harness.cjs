@@ -219,20 +219,36 @@ function killHarness(child) {
   if (!child || child.killed) return Promise.resolve();
   console.log('[desktop] Stopping harness server...');
   return new Promise((resolve) => {
-    const killed = child.kill('SIGTERM');
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      console.log('[desktop] Harness server stopped.');
+      resolve();
+    };
+
+    // Fallback: force-kill if the process ignores SIGTERM. Cleared once the
+    // process exits so we never signal a recycled pid after the fact.
+    const fallback = setTimeout(() => {
+      try { process.kill(child.pid, 'SIGKILL'); } catch {}
+      finish();
+    }, 5000);
+
+    child.once('exit', () => {
+      clearTimeout(fallback);
+      finish();
+    });
+
+    let killed = false;
+    try {
+      killed = child.kill('SIGTERM');
+    } catch {
+      killed = false;
+    }
     if (!killed) {
       // Force kill on Windows
       try { process.kill(child.pid, 'SIGKILL'); } catch {}
     }
-    child.on('exit', () => {
-      console.log('[desktop] Harness server stopped.');
-      resolve();
-    });
-    // Fallback timeout
-    setTimeout(() => {
-      try { process.kill(child.pid, 'SIGKILL'); } catch {}
-      resolve();
-    }, 5000);
   });
 }
 

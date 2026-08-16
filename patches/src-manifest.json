@@ -1,0 +1,14 @@
+{
+  "version": "0.1.8",
+  "files": {
+    "fullscreen.cjs": "63a93dafc4a70ac3ad6b527f1b116821afaf33df43c8aef5f5ff28d5a6436943",
+    "harness.cjs": "be48c070750c360f5f995e08e5c476e3fcfa24efaef8f792ec580140a682b4b9",
+    "main.cjs": "e4f794c1053f419ae7e72e513ac7bfc95bb498d50db9b76a769bf907d9e44afa",
+    "preload.cjs": "8f4b65820d8d5aba6b7aa2969ac52de750c687bfb64677e1f00fb4158be3fac6",
+    "settings.cjs": "129951a66042ab9e8edeb3522f68660d2e867223d85a826e0562bbabbe7ac1a5",
+    "skin-install-preload.cjs": "e3ad0f8029769d3ebb7d171946a33cfe9cd1a2f7bb191ef9373891ed18213e0e",
+    "skin-install.cjs": "c110e5cb1c57c35838ecc23aadbf7fdb88c2aedab97773d177a34d2a5d19070d",
+    "skin-install.html": "8a775971e52b62721dc497114c4e3bed5d7db665c7fb32b1786275f3fdbbf582",
+    "skins.cjs": "2017c55c595f88b4a54d95b2484363e6524f0160904647db4e8e5736580bffe0"
+  }
+}
