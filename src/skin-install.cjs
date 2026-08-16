@@ -96,26 +96,66 @@ function extractZip(zipPath, destDir) {
 }
 
 /**
- * Breadth-first search (up to maxDepth) for the folder containing skin.css.
- * Returns the first (shallowest) match, or null.
+ * Locate the skin stylesheet inside an extracted zip.
+ * Pass 1: a folder containing skin.css at any depth (<= maxDepth).
+ * Pass 2: a folder containing a common stylesheet name (theme.css, style.css,
+ *         styles.css, index.css, main.css) at a SHALLOW depth only — this keeps
+ *         scoped/module CSS deep inside source monorepos from being picked.
+ * Returns { dir, cssFile } or null.
  */
 function findSkinRoot(rootDir, maxDepth = 3) {
-  const queue = [{ dir: rootDir, depth: 0 }];
-  while (queue.length) {
-    const { dir, depth } = queue.shift();
-    if (depth > maxDepth) continue;
-    let entries;
+  const fallbackNames = new Set(['theme.css', 'style.css', 'styles.css', 'index.css', 'main.css']);
+
+  const bfs = (accept) => {
+    const queue = [{ dir: rootDir, depth: 0 }];
+    while (queue.length) {
+      const { dir, depth } = queue.shift();
+      if (depth > maxDepth) continue;
+      let entries;
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      const hit = entries.find((e) => e.isFile() && accept(e.name, depth));
+      if (hit) return { dir, cssFile: hit.name };
+      for (const e of entries) {
+        if (e.isDirectory()) queue.push({ dir: path.join(dir, e.name), depth: depth + 1 });
+      }
+    }
+    return null;
+  };
+
+  return (
+    bfs((name) => name.toLowerCase() === 'skin.css') ||
+    bfs((name, depth) => depth <= 1 && fallbackNames.has(name.toLowerCase()))
+  );
+}
+
+/** Describe the top-level contents of an extracted zip for error messages. */
+function describeZipContents(rootDir) {
+  const list = (dir) => {
     try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
+      return fs.readdirSync(dir);
     } catch {
-      continue;
+      return null;
     }
-    if (entries.some((e) => e.isFile() && e.name.toLowerCase() === 'skin.css')) return dir;
-    for (const e of entries) {
-      if (e.isDirectory()) queue.push({ dir: path.join(dir, e.name), depth: depth + 1 });
-    }
+  };
+  let names = list(rootDir);
+  // GitHub archives wrap the repo in a "<repo>-<branch>/" folder — if the root
+  // holds exactly one directory, describe what's actually inside it instead.
+  if (names && names.length === 1) {
+    const only = path.join(rootDir, names[0]);
+    try {
+      if (fs.statSync(only).isDirectory()) {
+        const inner = list(only);
+        if (inner && inner.length > 0) names = inner;
+      }
+    } catch { /* keep the outer name */ }
   }
-  return null;
+  if (!names || names.length === 0) return '压缩包是空的。';
+  const shown = names.slice(0, 20).join('、');
+  return names.length > 20 ? `压缩包里有：${shown}… 等` : `压缩包里有：${shown}`;
 }
 
 /**
@@ -129,17 +169,31 @@ async function extractAndInstallSkin(zipPath) {
     fs.mkdirSync(extractDir, { recursive: true });
     await extractZip(zipPath, extractDir);
 
-    const skinRoot = findSkinRoot(extractDir);
-    if (!skinRoot) throw new Error('压缩包里没有找到皮肤：缺少 skin.css 文件');
+    const found = findSkinRoot(extractDir);
+    if (!found) {
+      throw new Error(
+        '压缩包里没有找到皮肤样式（需要 skin.css 等 CSS 文件）。' +
+        `${describeZipContents(extractDir)} 这类仓库可能是 dsh 插件 / 源码仓库 / 主题包，` +
+        '不是皮肤文件夹；皮肤需要包含 CSS 样式文件的文件夹。'
+      );
+    }
+    const { dir: skinRoot, cssFile } = found;
 
-    const meta = readMeta(path.join(skinRoot, 'skin.json'));
-    const rawName = (meta && meta.name) || path.basename(skinRoot) || 'skin';
+    // skin.json (or theme.json) carries display metadata.
+    const meta = readMeta(path.join(skinRoot, 'skin.json')) || readMeta(path.join(skinRoot, 'theme.json'));
+    // Strip the GitHub archive suffix ("my-skin-main" -> "my-skin").
+    const rawName = (meta && meta.name) || path.basename(skinRoot).replace(/-(main|master|HEAD)$/i, '') || 'skin';
     const name = String(rawName).replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim() || 'skin';
 
     const skinsDir = ensureSkinsDirectory();
     const dest = path.join(skinsDir, name);
     fs.rmSync(dest, { recursive: true, force: true }); // overwrite on re-install
     fs.cpSync(skinRoot, dest, { recursive: true });
+    // The app's skin loader looks for skin.css; normalize whatever stylesheet
+    // we found so the installed skin always shows up in the menu.
+    if (cssFile.toLowerCase() !== 'skin.css') {
+      fs.copyFileSync(path.join(skinRoot, cssFile), path.join(dest, 'skin.css'));
+    }
     return { name, dest };
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
