@@ -41,6 +41,10 @@ app.whenReady().then(async () => {
     problems.push(`did-fail-load ${code} ${desc} ${url}`);
   });
 
+  // The dialog window must not show the app menu bar (removed via removeMenu).
+  win.removeMenu();
+  const menuBarHidden = process.platform === 'win32' ? !win.isMenuBarVisible() : true;
+
   await win.loadFile(path.join(__dirname, '..', 'src', 'skin-install.html'));
 
   // Install, then confirm the switch prompt appears and clicking it fires IPC.
@@ -72,6 +76,7 @@ app.whenReady().then(async () => {
 
   const pass =
     problems.length === 0 &&
+    menuBarHidden &&
     result.afterInstall.status.includes('已安装') &&
     result.afterInstall.statusClass === 'ok' &&
     result.afterInstall.confirmHidden === false &&

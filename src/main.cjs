@@ -147,6 +147,9 @@ function openSkinInstallDialog() {
     },
     icon: path.join(__dirname, '..', 'assets', 'icon.png'),
   });
+  // The dialog is a small single-purpose window — drop the global menu bar
+  // (File/Edit/View/…) that otherwise shows on every window on Windows.
+  skinInstallWin.removeMenu();
   skinInstallWin.loadFile(path.join(__dirname, 'skin-install.html'));
   skinInstallWin.once('ready-to-show', () => {
     if (skinInstallWin) skinInstallWin.show();
