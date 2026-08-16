@@ -30,7 +30,13 @@
 
 ## 📸 截图 / Screenshot
 
-![DeepSeek Harness Desktop](assets/screenshot.png)
+| 标准界面 / Main UI | 全屏 / Fullscreen |
+| --- | --- |
+| ![标准界面](assets/screenshot-main.png) | ![全屏](assets/screenshot-fullscreen.png) |
+
+| 皮肤菜单 / Skins menu | 从 GitHub 安装皮肤 / Install from GitHub |
+| --- | --- |
+| ![皮肤菜单](assets/screenshot-skins-menu.png) | ![从 GitHub 安装皮肤](assets/screenshot-skins-install.png) |
 
 ## 🚀 快速开始 / Quick Start
 
