@@ -16,4 +16,9 @@ contextBridge.exposeInMainWorld('dshSkinInstaller', {
   switchTo: (id) => ipcRenderer.send('dsh-skin-install:switch-to', id),
   close: () => ipcRenderer.send('dsh-skin-install:close'),
   openSkinsFolder: () => ipcRenderer.send('dsh-skin-install:open-folder'),
+  // Plugin management.
+  listPlugins: () => ipcRenderer.invoke('dsh-desktop:list-plugins'),
+  installPlugin: (spec) => ipcRenderer.invoke('dsh-desktop:install-plugin', spec),
+  removePlugin: (name) => ipcRenderer.invoke('dsh-desktop:remove-plugin', name),
+  togglePlugin: (name, active) => ipcRenderer.invoke('dsh-desktop:toggle-plugin', name, active),
 });

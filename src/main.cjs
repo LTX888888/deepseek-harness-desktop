@@ -3,7 +3,7 @@
  * Spawns/manages the dsh web server and opens the GUI in a native window.
  */
 
-const { app, BrowserWindow, shell, ipcMain, Menu, MenuItem } = require('electron');
+const { app, BrowserWindow, shell, ipcMain, Menu, MenuItem, dialog } = require('electron');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
@@ -17,6 +17,7 @@ const {
 const { DEFAULT_SKIN, listSkins, ensureSkinsDirectory, getSkinsDirectory, readSkinCss } = require('./skins.cjs');
 const { installSkinFromGitHub } = require('./skin-install.cjs');
 const { buildOverlayScript } = require('./fullscreen.cjs');
+const { listPlugins, setPluginActive, installPlugin, removePlugin } = require('./plugins.cjs');
 
 // Mirror console output into a log file: the packaged exe has no console
 // window, so this is the only way to diagnose startup problems on a user box.
@@ -100,6 +101,34 @@ function setSkin(id) {
   buildMenu();
 }
 
+/**
+ * Toggle a plugin bundle on/off (edit the profile manifest bundles list) and
+ * restart the harness so the layer change takes effect.
+ */
+function togglePlugin(name, active) {
+  try {
+    setPluginActive(name, active);
+  } catch (error) {
+    console.error('[desktop] Plugin toggle failed:', error);
+    dialog.showMessageBox(mainWindow, {
+      type: 'error',
+      title: '插件切换失败',
+      message: String((error && error.message) || error),
+    });
+    buildMenu();
+    return;
+  }
+  buildMenu();
+  restartHarness().catch((error) => {
+    console.error('[desktop] Harness restart failed:', error);
+    dialog.showMessageBox(mainWindow, {
+      type: 'error',
+      title: '重启失败',
+      message: `${(error && error.message) || error}\n\n请手动重启应用使插件切换生效。`,
+    });
+  });
+}
+
 /** Open the skins folder in Explorer (creating it + a README on first use). */
 function openSkinsFolder() {
   try {
@@ -122,22 +151,22 @@ function sendSkinStatus(text) {
   }
 }
 
-/** Open the "Install Skin from GitHub" modal dialog. */
-function openSkinInstallDialog() {
+/** Open the "Install from GitHub" modal dialog on the given tab (skin|plugin). */
+function openSkinInstallDialog(tab = 'skin') {
   if (skinInstallWin && !skinInstallWin.isDestroyed()) {
     skinInstallWin.focus();
     return;
   }
   const zh = readLocalePreference() === 'zh';
   skinInstallWin = new BrowserWindow({
-    width: 520,
-    height: 360,
+    width: 560,
+    height: 420,
     resizable: false,
     minimizable: false,
     maximizable: false,
     parent: mainWindow || undefined,
     modal: Boolean(mainWindow),
-    title: zh ? '从 GitHub 安装皮肤' : 'Install Skin from GitHub',
+    title: zh ? '从 GitHub 安装' : 'Install from GitHub',
     show: false,
     webPreferences: {
       contextIsolation: true,
@@ -150,7 +179,7 @@ function openSkinInstallDialog() {
   // The dialog is a small single-purpose window — drop the global menu bar
   // (File/Edit/View/…) that otherwise shows on every window on Windows.
   skinInstallWin.removeMenu();
-  skinInstallWin.loadFile(path.join(__dirname, 'skin-install.html'));
+  skinInstallWin.loadFile(path.join(__dirname, 'skin-install.html'), { query: { tab } });
   skinInstallWin.once('ready-to-show', () => {
     if (skinInstallWin) skinInstallWin.show();
   });
@@ -227,16 +256,36 @@ function buildSkinsSubmenu(L) {
   }
 
   submenu.append(new MenuItem({ type: 'separator' }));
+  submenu.append(new MenuItem({ label: L('插件 / Plugins', 'Plugins'), enabled: false }));
+
+  const plugins = listPlugins();
+  if (plugins.length === 0) {
+    submenu.append(new MenuItem({ label: L('（无插件）', '(none installed)'), enabled: false }));
+  }
+  for (const plugin of plugins) {
+    submenu.append(new MenuItem({
+      label: plugin.active ? `${plugin.name}  ✔` : plugin.name,
+      type: 'checkbox',
+      checked: plugin.active,
+      click: () => togglePlugin(plugin.name, !plugin.active),
+    }));
+  }
+
+  submenu.append(new MenuItem({ type: 'separator' }));
   submenu.append(new MenuItem({
     label: L('从 GitHub 安装皮肤…', 'Install Skin from GitHub…'),
-    click: () => openSkinInstallDialog(),
+    click: () => openSkinInstallDialog('skin'),
+  }));
+  submenu.append(new MenuItem({
+    label: L('从 GitHub 安装插件…', 'Install Plugin from GitHub…'),
+    click: () => openSkinInstallDialog('plugin'),
   }));
   submenu.append(new MenuItem({
     label: L('打开皮肤文件夹…', 'Open Skins Folder…'),
     click: () => openSkinsFolder(),
   }));
   submenu.append(new MenuItem({
-    label: L('刷新皮肤列表', 'Refresh Skins'),
+    label: L('刷新列表', 'Refresh'),
     click: () => buildMenu(),
   }));
 
@@ -265,6 +314,30 @@ function applyFullscreenOverlay(visible) {
   const zh = readLocalePreference() === 'zh';
   const label = zh ? '退出全屏' : 'Exit Full Screen';
   mainWindow.webContents.executeJavaScript(buildOverlayScript(visible, label)).catch(() => {});
+}
+
+// --- Harness restart (for plugin activation changes) ------------------------
+/**
+ * Restart the harness child we spawned so a changed `dsh.profile.bundles`
+ * layer list takes effect, then reload the window against the new server.
+ * Refuses when the app reused an external harness (it does not own that one).
+ */
+async function restartHarness() {
+  if (harnessReused) {
+    throw new Error('当前连接的是外部 Harness，应用无法重启它（插件切换需要重启 Harness 生效）');
+  }
+  const old = harnessChild;
+  await killHarness(old);
+  const { child, port, reused } = await spawnHarnessServer({ port: harnessPort });
+  harnessChild = child;
+  harnessPort = port;
+  harnessReused = reused;
+  const serverUrl = await waitForReady(port, '127.0.0.1', 120000, child);
+  console.log(`[desktop] Harness restarted on port ${port}`);
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.loadURL(serverUrl).catch((err) => console.error('[desktop] Reload after restart failed:', err));
+  }
+  return serverUrl;
 }
 
 /** Build and install the application menu (labels follow the active locale). */
@@ -455,6 +528,42 @@ async function startup() {
   ipcMain.on('dsh-skin-install:switch-to', (_event, id) => setSkin(String(id || '')));
   ipcMain.on('dsh-desktop:set-fullscreen', (_event, flag) => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setFullScreen(Boolean(flag));
+  });
+
+  // Plugin management: list installed bundles, install/remove/toggle via the
+  // bundled `dsh plugin` CLI + the profile manifest.
+  ipcMain.handle('dsh-desktop:list-plugins', async () => {
+    try {
+      return { ok: true, plugins: listPlugins() };
+    } catch (error) {
+      return { ok: false, message: String((error && error.message) || error) };
+    }
+  });
+  ipcMain.handle('dsh-desktop:install-plugin', async (_event, spec) => {
+    try {
+      await installPlugin(String(spec || ''), sendSkinStatus);
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, message: String((error && error.message) || error) };
+    }
+  });
+  ipcMain.handle('dsh-desktop:remove-plugin', async (_event, name) => {
+    try {
+      await removePlugin(String(name || ''), sendSkinStatus);
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, message: String((error && error.message) || error) };
+    }
+  });
+  ipcMain.handle('dsh-desktop:toggle-plugin', async (_event, name, active) => {
+    try {
+      const result = setPluginActive(String(name || ''), Boolean(active));
+      // restart the harness so the bundle change takes effect (async).
+      restartHarness().catch((err) => console.error('[desktop] Harness restart failed:', err));
+      return { ok: true, ...result };
+    } catch (error) {
+      return { ok: false, message: String((error && error.message) || error) };
+    }
   });
 
   // Ensure single instance

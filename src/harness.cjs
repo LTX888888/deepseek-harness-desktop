@@ -254,6 +254,7 @@ function killHarness(child) {
 
 module.exports = {
   findHarnessRoot,
+  resolveBundledRuntime,
   pickPort,
   probeHarness,
   spawnHarnessServer,

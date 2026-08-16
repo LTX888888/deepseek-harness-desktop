@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'">
-<title>从 GitHub 安装皮肤 / Install Skin from GitHub</title>
+<title>从 GitHub 安装 / Install from GitHub</title>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
@@ -12,10 +12,23 @@
     font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
     background: #1e1f24;
     color: #e6e6e6;
-    padding: 18px 20px;
+    padding: 16px 20px 18px;
     user-select: none;
   }
-  h1 { font-size: 15px; margin: 0 0 14px; color: #fff; font-weight: 600; }
+  h1 { font-size: 15px; margin: 0 0 12px; color: #fff; font-weight: 600; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 14px; }
+  .tab {
+    flex: 1;
+    padding: 7px 12px;
+    border: 1px solid #3a3d46;
+    border-radius: 6px;
+    background: #15161a;
+    color: #b3b9c4;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .tab.active { background: #4d6bfe; border-color: #4d6bfe; color: #fff; }
+  .panel[hidden] { display: none; }
   .row { display: flex; gap: 8px; }
   input[type="text"] {
     flex: 1;
@@ -42,8 +55,8 @@
   button:hover { background: #3d5af0; }
   button:disabled { background: #37405c; color: #9aa3b8; cursor: default; }
   #status {
-    margin-top: 14px;
-    min-height: 38px;
+    margin-top: 12px;
+    min-height: 34px;
     font-size: 13px;
     line-height: 1.5;
     color: #b3b9c4;
@@ -68,8 +81,26 @@
   #switch-now.primary:hover { background: #15803d; }
   #keep-current { background: #2b2f3a; }
   #keep-current:hover { background: #3a3f4d; }
+  #plugin-list { margin-top: 12px; max-height: 150px; overflow: auto; }
+  .pl-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border: 1px solid #2c2f38;
+    border-radius: 6px;
+    margin-bottom: 6px;
+    background: #181a1f;
+  }
+  .pl-name { flex: 1; font-size: 13px; word-break: break-all; }
+  .pl-btn { padding: 5px 10px; font-size: 12px; }
+  .pl-btn.active { background: #16a34a; }
+  .pl-btn.active:hover { background: #15803d; }
+  .pl-btn.rm { background: #b91c1c; }
+  .pl-btn.rm:hover { background: #991b1b; }
+  .pl-empty { font-size: 12px; color: #8a91a0; padding: 8px 0; }
   .hint {
-    margin-top: 16px;
+    margin-top: 14px;
     font-size: 12px;
     color: #8a91a0;
     line-height: 1.6;
@@ -79,39 +110,73 @@
 </style>
 </head>
 <body>
-  <h1>从 GitHub 安装皮肤 / Install Skin from GitHub</h1>
-  <div class="row">
-    <input id="url" type="text" spellcheck="false" autocomplete="off"
-           placeholder="https://github.com/用户名/仓库名" autofocus>
-    <button id="install">安装 / Install</button>
+  <h1>从 GitHub 安装 / Install from GitHub</h1>
+  <div class="tabs">
+    <button id="tab-skin" class="tab active">皮肤 / Skins</button>
+    <button id="tab-plugin" class="tab">插件 / Plugins</button>
   </div>
+
+  <div id="panel-skin" class="panel">
+    <div class="row">
+      <input id="url" type="text" spellcheck="false" autocomplete="off"
+             placeholder="https://github.com/用户名/仓库名">
+      <button id="install">安装 / Install</button>
+    </div>
+    <div id="confirm" hidden>
+      <span class="confirm-label">是否立即切换到新皮肤？</span>
+      <button id="switch-now" class="primary">立即切换 / Switch Now</button>
+      <button id="keep-current">暂不切换 / Not Now</button>
+    </div>
+    <div id="actions" hidden>
+      <button id="open-folder">打开皮肤文件夹 / Open Skins Folder</button>
+    </div>
+  </div>
+
+  <div id="panel-plugin" class="panel" hidden>
+    <div class="row">
+      <input id="plugin-url" type="text" spellcheck="false" autocomplete="off"
+             placeholder="github:用户名/仓库名 或 https://github.com/用户名/仓库名">
+      <button id="plugin-install">安装 / Install</button>
+    </div>
+    <div id="plugin-list"></div>
+  </div>
+
   <div id="status"></div>
-  <div id="confirm" hidden>
-    <span class="confirm-label">是否立即切换到新皮肤？</span>
-    <button id="switch-now" class="primary">立即切换 / Switch Now</button>
-    <button id="keep-current">暂不切换 / Not Now</button>
-  </div>
-  <div id="actions" hidden>
-    <button id="open-folder">打开皮肤文件夹 / Open Skins Folder</button>
-  </div>
   <p class="hint">
     支持仓库主页（自动取 main/master 分支）、分支地址（…/tree/分支）、发布 zip 直链（…/releases/download/…）。
-    安装完成后在菜单「皮肤 / Skins」里即可切换。安装的皮肤存放在 ~/.dsh/skins。
-    <br>皮肤格式：仓库里要有 CSS 样式文件（<code>skin.css</code> / <code>theme.css</code> 等）。dsh 插件、纯源码、主题包类仓库无法直接安装为皮肤。
+    <br>皮肤：仓库里有 CSS（<code>skin.css</code> / <code>theme.css</code> 等）。插件：dsh 插件仓库（<code>package.json</code> + <code>dsh.bundle</code>）。
+    <br>插件启用/停用需重启引擎生效（应用会自动重启）。安装的皮肤/插件存放在 ~/.dsh。
   </p>
 
 <script>
+  const statusEl = document.getElementById('status');
   const input = document.getElementById('url');
   const btn = document.getElementById('install');
-  const statusEl = document.getElementById('status');
   const confirmEl = document.getElementById('confirm');
   const actionsEl = document.getElementById('actions');
   let lastInstalledName = null;
 
-  window.dshSkinInstaller.onStatus((text) => {
-    statusEl.textContent = text;
-  });
+  window.dshSkinInstaller.onStatus((text) => { statusEl.textContent = text; });
 
+  // --- tabs ---
+  const tabSkin = document.getElementById('tab-skin');
+  const tabPlugin = document.getElementById('tab-plugin');
+  const panelSkin = document.getElementById('panel-skin');
+  const panelPlugin = document.getElementById('panel-plugin');
+  function selectTab(which) {
+    const skin = which === 'skin';
+    tabSkin.classList.toggle('active', skin);
+    tabPlugin.classList.toggle('active', !skin);
+    panelSkin.hidden = !skin;
+    panelPlugin.hidden = skin;
+    statusEl.textContent = '';
+    statusEl.className = '';
+    if (!skin) refreshPlugins();
+  }
+  tabSkin.addEventListener('click', () => selectTab('skin'));
+  tabPlugin.addEventListener('click', () => selectTab('plugin'));
+
+  // --- skin install ---
   async function go() {
     const url = input.value.trim();
     if (!url || btn.disabled) return;
@@ -133,7 +198,6 @@
       btn.disabled = false;
     }
   }
-
   btn.addEventListener('click', go);
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
   document.getElementById('open-folder').addEventListener('click', () => window.dshSkinInstaller.openSkinsFolder());
@@ -144,9 +208,101 @@
     statusEl.className = 'ok';
     confirmEl.hidden = true;
   });
-  document.getElementById('keep-current').addEventListener('click', () => {
-    confirmEl.hidden = true;
-  });
+  document.getElementById('keep-current').addEventListener('click', () => { confirmEl.hidden = true; });
+
+  // --- plugin install / list ---
+  const pluginInput = document.getElementById('plugin-url');
+  const pluginInstallBtn = document.getElementById('plugin-install');
+  const pluginList = document.getElementById('plugin-list');
+
+  function toPluginSpec(raw) {
+    const s = raw.trim();
+    const m = s.match(/^https?:\/\/github\.com\/([^/]+)\/([^/\s#]+)/);
+    if (m) return `github:${m[1]}/${m[2]}`;
+    return s;
+  }
+
+  async function installPlugin() {
+    const spec = toPluginSpec(pluginInput.value);
+    if (!spec || pluginInstallBtn.disabled) return;
+    pluginInstallBtn.disabled = true;
+    statusEl.textContent = '正在安装插件（pnpm 构建，可能需要一些时间）…';
+    statusEl.className = '';
+    const res = await window.dshSkinInstaller.installPlugin(spec);
+    if (res.ok) {
+      statusEl.textContent = '✅ 插件已安装，请在上方列表启用';
+      statusEl.className = 'ok';
+      pluginInput.value = '';
+    } else {
+      statusEl.textContent = `❌ ${res.message || '安装失败'}`;
+      statusEl.className = 'err';
+    }
+    pluginInstallBtn.disabled = false;
+    refreshPlugins();
+  }
+  pluginInstallBtn.addEventListener('click', installPlugin);
+  pluginInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') installPlugin(); });
+
+  async function refreshPlugins() {
+    const res = await window.dshSkinInstaller.listPlugins();
+    pluginList.innerHTML = '';
+    if (!res.ok) {
+      pluginList.innerHTML = `<div class="pl-empty">${res.message || '读取失败'}</div>`;
+      return;
+    }
+    if (res.plugins.length === 0) {
+      pluginList.innerHTML = '<div class="pl-empty">暂无已安装插件</div>';
+      return;
+    }
+    for (const p of res.plugins) {
+      const row = document.createElement('div');
+      row.className = 'pl-row';
+
+      const name = document.createElement('span');
+      name.className = 'pl-name';
+      name.textContent = p.name;
+      name.title = p.name;
+
+      const toggleBtn = document.createElement('button');
+      toggleBtn.className = 'pl-btn' + (p.active ? ' active' : '');
+      toggleBtn.textContent = p.active ? '已启用' : '已停用';
+      toggleBtn.onclick = async () => {
+        toggleBtn.disabled = true;
+        const r = await window.dshSkinInstaller.togglePlugin(p.name, !p.active);
+        if (r.ok) {
+          statusEl.textContent = `已${p.active ? '停用' : '启用'} ${p.name}，正在重启引擎…`;
+          statusEl.className = 'ok';
+        } else {
+          statusEl.textContent = `❌ ${r.message}`;
+          statusEl.className = 'err';
+        }
+        refreshPlugins();
+      };
+
+      const rmBtn = document.createElement('button');
+      rmBtn.className = 'pl-btn rm';
+      rmBtn.textContent = '卸载';
+      rmBtn.onclick = async () => {
+        rmBtn.disabled = true;
+        const r = await window.dshSkinInstaller.removePlugin(p.name);
+        if (r.ok) {
+          statusEl.textContent = `已卸载 ${p.name}`;
+          statusEl.className = 'ok';
+        } else {
+          statusEl.textContent = `❌ ${r.message}`;
+          statusEl.className = 'err';
+        }
+        refreshPlugins();
+      };
+
+      row.append(name, toggleBtn, rmBtn);
+      pluginList.appendChild(row);
+    }
+  }
+
+  // initial tab from query (?tab=plugin)
+  const initial = new URLSearchParams(location.search).get('tab');
+  selectTab(initial === 'plugin' ? 'plugin' : 'skin');
 </script>
 </body>
 </html>

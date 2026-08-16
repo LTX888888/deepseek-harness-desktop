@@ -22,6 +22,10 @@ app.whenReady().then(async () => {
   ipcMain.on('dsh-skin-install:switch-to', (_event, id) => {
     switchedTo = id;
   });
+  ipcMain.handle('dsh-desktop:list-plugins', async () => ({
+    ok: true,
+    plugins: [{ name: '@x/demo-theme', active: true }],
+  }));
 
   const win = new BrowserWindow({
     show: false,
@@ -66,7 +70,14 @@ app.whenReady().then(async () => {
         status: document.getElementById('status').textContent,
         confirmHidden: document.getElementById('confirm').hidden,
       };
-      return { afterInstall, afterSwitch };
+      // plugin tab: switch and check the list renders a plugin row
+      document.getElementById('tab-plugin').click();
+      await new Promise((r) => setTimeout(r, 300));
+      const pluginTab = {
+        panelVisible: !document.getElementById('panel-plugin').hidden,
+        listText: document.getElementById('plugin-list').textContent,
+      };
+      return { afterInstall, afterSwitch, pluginTab };
     })()
   `);
 
@@ -83,7 +94,9 @@ app.whenReady().then(async () => {
     result.afterInstall.actionsHidden === false &&
     switchedTo === '测试皮肤' &&
     result.afterSwitch.status.includes('已切换') &&
-    result.afterSwitch.confirmHidden === true;
+    result.afterSwitch.confirmHidden === true &&
+    result.pluginTab.panelVisible === true &&
+    result.pluginTab.listText.includes('@x/demo-theme');
 
   console.log(pass ? 'SKIN DIALOG TEST: PASS' : 'SKIN DIALOG TEST: FAIL');
   app.exit(pass ? 0 : 1);
