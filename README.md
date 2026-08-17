@@ -1,6 +1,6 @@
 <div align="center">
 
-#  DeepSeek Harness Desktop
+#  @deepseek-ai/DeepSeek Harness Desktop
 
 **把 DeepSeek Harness AI 助手装进原生 Windows 桌面应用**
 *Turn the DeepSeek Harness AI agent into a native Windows desktop app*
