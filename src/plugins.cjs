@@ -277,6 +277,58 @@ function removePlugin(name, onOutput = () => {}) {
   return Promise.reject(new Error(`未找到插件「${name}」`));
 }
 
+/**
+ * Scan `profiles/node_modules` for packages declaring `dsh.client` and ensure
+ * each is registered in cordis.patch.yml (idempotent). The harness profile
+ * boot can recreate cordis.patch.yml from its template, so the app re-runs
+ * this at startup to keep installed client plugins registered.
+ * @returns the names that were (re)registered.
+ */
+function ensureClientPlugins() {
+  const nmDir = profilesNodeModulesDir();
+  const registered = new Set(listClientPlugins().map((p) => p.name));
+  const found = [];
+  const handlePackage = (dir) => {
+    const pkgPath = path.join(dir, 'package.json');
+    if (!fs.existsSync(pkgPath)) return;
+    let pkg;
+    try {
+      pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8').replace(/^\uFEFF/, ''));
+    } catch {
+      return;
+    }
+    if (!pkg || !pkg.name || !(pkg.dsh && pkg.dsh.client)) return;
+    if (registered.has(pkg.name)) return;
+    const id = pkg.name.replace(/^@[^/]+\//, '').replace(/[^a-zA-Z0-9_-]+/g, '-');
+    registerClientPlugin(id, pkg.name);
+    found.push(pkg.name);
+  };
+  let entries = [];
+  try {
+    entries = fs.readdirSync(nmDir, { withFileTypes: true });
+  } catch {
+    return found;
+  }
+  for (const e of entries) {
+    if (!e.isDirectory()) continue;
+    if (e.name.startsWith('@')) {
+      const scopeDir = path.join(nmDir, e.name);
+      let scoped = [];
+      try {
+        scoped = fs.readdirSync(scopeDir, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      for (const s of scoped) {
+        if (s.isDirectory()) handlePackage(path.join(scopeDir, s.name));
+      }
+    } else if (e.name !== '.bin') {
+      handlePackage(path.join(nmDir, e.name));
+    }
+  }
+  return found;
+}
+
 module.exports = {
   profileDir,
   manifestPath,
@@ -286,4 +338,5 @@ module.exports = {
   installPlugin,
   removePlugin,
   listClientPlugins,
+  ensureClientPlugins,
 };

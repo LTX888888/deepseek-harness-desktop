@@ -17,7 +17,7 @@ const {
 const { DEFAULT_SKIN, listSkins, ensureSkinsDirectory, getSkinsDirectory, readSkinCss } = require('./skins.cjs');
 const { installSkinFromGitHub } = require('./skin-install.cjs');
 const { buildOverlayScript } = require('./fullscreen.cjs');
-const { listPlugins, setPluginActive, installPlugin, removePlugin } = require('./plugins.cjs');
+const { listPlugins, setPluginActive, installPlugin, removePlugin, ensureClientPlugins } = require('./plugins.cjs');
 
 // Mirror console output into a log file: the packaged exe has no console
 // window, so this is the only way to diagnose startup problems on a user box.
@@ -506,6 +506,17 @@ function createWindow(serverUrl) {
 async function startup() {
   console.log('[desktop] Starting DeepSeek Harness Desktop...');
   if (SMOKE_MODE) console.log('[desktop] SMOKE MODE enabled');
+
+  // Re-register installed client UI plugins in cordis.patch.yml if the harness
+  // profile boot recreated the patch file, then build the menu with the list.
+  try {
+    const restored = ensureClientPlugins();
+    if (restored.length > 0) {
+      console.log(`[desktop] Re-registered client plugins: ${restored.join(', ')}`);
+    }
+  } catch (error) {
+    console.error('[desktop] ensureClientPlugins failed:', error);
+  }
 
   buildMenu(); // install the native menu (language switching lives here)
 
