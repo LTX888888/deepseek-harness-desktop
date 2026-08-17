@@ -102,12 +102,13 @@ function setSkin(id) {
 }
 
 /**
- * Toggle a plugin bundle on/off (edit the profile manifest bundles list) and
- * restart the harness so the layer change takes effect.
+ * Toggle a plugin on/off. Bundle plugins need a harness restart; client UI
+ * plugins only need the web page to reload (they are discovered on render).
  */
 function togglePlugin(name, active) {
+  let result;
   try {
-    setPluginActive(name, active);
+    result = setPluginActive(name, active);
   } catch (error) {
     console.error('[desktop] Plugin toggle failed:', error);
     dialog.showMessageBox(mainWindow, {
@@ -119,14 +120,18 @@ function togglePlugin(name, active) {
     return;
   }
   buildMenu();
-  restartHarness().catch((error) => {
-    console.error('[desktop] Harness restart failed:', error);
-    dialog.showMessageBox(mainWindow, {
-      type: 'error',
-      title: '重启失败',
-      message: `${(error && error.message) || error}\n\n请手动重启应用使插件切换生效。`,
+  if (result.type === 'client') {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.reload();
+  } else {
+    restartHarness().catch((error) => {
+      console.error('[desktop] Harness restart failed:', error);
+      dialog.showMessageBox(mainWindow, {
+        type: 'error',
+        title: '重启失败',
+        message: `${(error && error.message) || error}\n\n请手动重启应用使插件切换生效。`,
+      });
     });
-  });
+  }
 }
 
 /** Open the skins folder in Explorer (creating it + a README on first use). */
@@ -558,8 +563,12 @@ async function startup() {
   ipcMain.handle('dsh-desktop:toggle-plugin', async (_event, name, active) => {
     try {
       const result = setPluginActive(String(name || ''), Boolean(active));
-      // restart the harness so the bundle change takes effect (async).
-      restartHarness().catch((err) => console.error('[desktop] Harness restart failed:', err));
+      // bundle → restart harness; client → reload page (discovered on render).
+      if (result.type === 'client') {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.reload();
+      } else {
+        restartHarness().catch((err) => console.error('[desktop] Harness restart failed:', err));
+      }
       return { ok: true, ...result };
     } catch (error) {
       return { ok: false, message: String((error && error.message) || error) };
