@@ -5,7 +5,7 @@
 **把 DeepSeek Harness AI 助手装进原生 Windows 桌面应用**
 *Turn the DeepSeek Harness AI agent into a native Windows desktop app*
 
-[![Version](https://img.shields.io/badge/version-0.1.2-4D6BFE)](package.json)
+[![Version](https://img.shields.io/badge/version-0.1.11-4D6BFE)](package.json)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-blue)](https://github.com/LTX888888/deepseek-harness-desktop/releases)
 [![Electron](https://img.shields.io/badge/Electron-38-47848F)](https://www.electronjs.org/)
@@ -41,9 +41,10 @@
 
 ## 快速开始 / Quick Start
 
-**方式一：安装版（推荐）** —— 双击 `DeepSeek-Harness-Setup-*.exe`，向导式安装，**可自定义安装目录**，自动建桌面/开始菜单快捷方式。
+直接下载下方的「安装版」或「便携版」即可使用：
 
-**方式二：便携版** —— 下载 `DeepSeek-Harness-Portable-*.exe`，双击即用，无需安装。
+- **安装版（推荐）**：向导式安装，可自定义安装目录，自动创建桌面和开始菜单快捷方式
+- **便携版**：免安装，下载后双击即用
 
 > 首次启动自动内置引擎，之后每次打开就是你的 AI 工作台。
 
@@ -71,30 +72,28 @@
 - **增量补丁机制**：`asarUnpack` 把代码解包成普通文件，`npm run make-patch` 对比基线生成几 KB 补丁，`apply-patch.cmd` 秒级覆盖更新
 - **向导式安装器**：NSIS assisted，可选安装目录、按用户安装（免管理员）、同 appId 自动覆盖升级、保留用户数据
 
-## 开发者 / For Developers
+## 安装 / Installation
+
+| 类型 | 下载 |
+| --- | --- |
+| **安装版**（推荐） | [⬇️ 下载安装版](https://github.com/LTX888888/deepseek-harness-desktop/releases/download/v0.1.11/DeepSeek-Harness-Setup-0.1.11.exe) |
+| **便携版** | [⬇️ 下载便携版](https://github.com/LTX888888/deepseek-harness-desktop/releases/download/v0.1.11/DeepSeek-Harness-Portable-0.1.11.exe) |
+
+> 历史版本见 [Releases 页面](https://github.com/LTX888888/deepseek-harness-desktop/releases)。
+
+## 从源码构建 / Build from Source
 
 ```bash
 npm install              # 安装构建依赖
 npm run prepare-runtime  # 拉取内置 harness 运行时（npm @deepseek-ai/dsh）
 npm start                # 开发模式启动
 
-npm run patch            # 增量更新本机已安装应用（直接覆盖 src 代码）
-npm run make-patch       # 生成增量补丁 zip（对比上次基线，只含改动文件）
-npm run dist             # 完整打包（自动 bump 版本 + 安装/便携/卸载三件套）
-npm run release          # dist + make-patch 一步产出「安装包 + 补丁」
+npm run dist             # 完整打包
 npm run dist:minor       # minor 版本打包
 npm run dist:major       # major 版本打包
+npm run dist:mac         # macOS 打包（需在 macOS 上运行）
+npm run dist:linux       # Linux 打包（需在 Linux 上运行）
 ```
-
-产物（`release/`）：
-- `DeepSeek-Harness-Setup-<version>.exe` — 一键覆盖安装器（123 MB，仅新机器/首次安装需要）
-- `DeepSeek-Harness-Portable-<version>.exe` — 免安装便携版
-- `DeepSeek-Harness-Uninstall-<version>.exe` — 独立卸载程序
-
-补丁（`patches/`）：
-- `patch-<旧版本>-to-<新版本>.zip` — **只有几 KB**。已装用户解压后双击 `apply-patch.cmd`（或右键 `apply-patch.ps1` 用 PowerShell 运行），重启应用即更新到新版本，**不需要再搬 123 MB 安装包**。安装目录可自定义，补丁脚本会自动从注册表定位实际安装位置
-- `src-manifest.json` — 补丁基线（每次 `make-patch` 自动滚动）
-- **补丁只能覆盖已存在的文件**：应用从 `app.asar` 加载代码，asar 目录树在打包时固定，**新增/删除 `src/` 文件必须发完整安装包**（`npm run make-patch` / `npm run patch` 会自动检测新增文件并阻止/跳过）
 
 ##  架构 / Architecture
 
