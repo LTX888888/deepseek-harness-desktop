@@ -75,12 +75,25 @@ async function downloadToFile(url, dest) {
   return buf.length;
 }
 
-/** Extract a zip archive with Windows PowerShell's Expand-Archive. */
+/**
+ * Extract a zip archive cross-platform:
+ *   - Windows → PowerShell Expand-Archive
+ *   - macOS / Linux → `unzip` (present on macOS and virtually every distro)
+ */
 function extractZip(zipPath, destDir) {
   return new Promise((resolve, reject) => {
-    const safe = (s) => String(s).replace(/'/g, "''");
-    const cmd = `$ErrorActionPreference='Stop'; Expand-Archive -LiteralPath '${safe(zipPath)}' -DestinationPath '${safe(destDir)}' -Force`;
-    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', cmd], {
+    let cmd;
+    let args;
+    if (process.platform === 'win32') {
+      const safe = (s) => String(s).replace(/'/g, "''");
+      cmd = 'powershell.exe';
+      args = ['-NoProfile', '-NonInteractive', '-Command',
+        `$ErrorActionPreference='Stop'; Expand-Archive -LiteralPath '${safe(zipPath)}' -DestinationPath '${safe(destDir)}' -Force`];
+    } else {
+      cmd = 'unzip';
+      args = ['-o', '-q', zipPath, '-d', destDir];
+    }
+    execFile(cmd, args, {
       windowsHide: true,
       timeout: 180000,
       maxBuffer: 1024 * 1024,

@@ -50,7 +50,8 @@ function writeManifest(manifest) {
 /**
  * Installed plugins: [{ name, active, type }] where type is 'bundle' or
  * 'client'. Bundle plugins come from the profile manifest `dependencies`;
- * client plugins come from cordis.patch.yml (always active while registered).
+ * client plugins are discovered from `profiles/node_modules` (active = whether
+ * registered in cordis.patch.yml), so toggling off keeps them listed.
  */
 function listPlugins() {
   const m = readManifest();
@@ -62,7 +63,7 @@ function listPlugins() {
     }
   }
   for (const p of listClientPlugins()) {
-    result.push({ name: p.name, active: true, type: 'client' });
+    result.push({ name: p.name, active: p.active, type: 'client' });
   }
   return result;
 }
@@ -162,7 +163,7 @@ function cordisPatchPath() {
 }
 function readCordisPatch() {
   try {
-    const text = fs.readFileSync(cordisPatchPath(), 'utf8');
+    const text = fs.readFileSync(cordisPatchPath(), 'utf8').replace(/^\uFEFF/, '');
     if (!text.trim()) return [];
     const doc = YAML.parse(text);
     return Array.isArray(doc) ? doc : [];
@@ -177,13 +178,62 @@ function writeCordisPatch(arr) {
   fs.writeFileSync(tmp, `${YAML.stringify(arr) || '[]'}\n`, 'utf8');
   fs.renameSync(tmp, p);
 }
-function listClientPlugins() {
-  const out = [];
+/** Names currently registered (active) in cordis.patch.yml. */
+function registeredClientNames() {
+  const names = new Set();
   for (const entry of readCordisPatch()) {
     if (entry && Array.isArray(entry.insert)) {
       for (const item of entry.insert) {
-        if (item && item.name) out.push({ id: item.id || item.name, name: item.name });
+        if (item && item.name) names.add(item.name);
       }
+    }
+  }
+  return names;
+}
+
+/**
+ * Installed client UI plugins: scan `profiles/node_modules` for packages that
+ * declare `dsh.client`. Each entry carries `active` = whether it is currently
+ * registered in cordis.patch.yml, so toggling off keeps the plugin listed.
+ */
+function listClientPlugins() {
+  const registered = registeredClientNames();
+  const nmDir = profilesNodeModulesDir();
+  const out = [];
+  const handle = (dir) => {
+    const pkgPath = path.join(dir, 'package.json');
+    if (!fs.existsSync(pkgPath)) return;
+    let pkg;
+    try {
+      pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8').replace(/^\uFEFF/, ''));
+    } catch {
+      return;
+    }
+    if (!pkg || !pkg.name || !(pkg.dsh && pkg.dsh.client)) return;
+    const id = pkg.name.replace(/^@[^/]+\//, '').replace(/[^a-zA-Z0-9_-]+/g, '-');
+    out.push({ id, name: pkg.name, active: registered.has(pkg.name) });
+  };
+  let entries = [];
+  try {
+    entries = fs.readdirSync(nmDir, { withFileTypes: true });
+  } catch {
+    return out;
+  }
+  for (const e of entries) {
+    if (!e.isDirectory()) continue;
+    if (e.name.startsWith('@')) {
+      const scopeDir = path.join(nmDir, e.name);
+      let scoped = [];
+      try {
+        scoped = fs.readdirSync(scopeDir, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      for (const s of scoped) {
+        if (s.isDirectory()) handle(path.join(scopeDir, s.name));
+      }
+    } else if (e.name !== '.bin') {
+      handle(path.join(nmDir, e.name));
     }
   }
   return out;
@@ -286,7 +336,7 @@ function removePlugin(name, onOutput = () => {}) {
  */
 function ensureClientPlugins() {
   const nmDir = profilesNodeModulesDir();
-  const registered = new Set(listClientPlugins().map((p) => p.name));
+  const registered = registeredClientNames();
   const found = [];
   const handlePackage = (dir) => {
     const pkgPath = path.join(dir, 'package.json');
